@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TraceForge</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <img src="../icons/icon32.png" alt="TraceForge" class="brand-logo" />
+        <div class="brand-text">
+          <span class="brand-name">TraceForge</span>
+          <span class="brand-version">v0.1.0</span>
+        </div>
+      </div>
+
+      <div class="status-cluster">
+        <div class="status-dot" id="backendDot" title="Backend"></div>
+        <div class="status-dot" id="wsDot" title="WebSocket"></div>
+      </div>
+    </header>
+
+    <!-- Connection Status Banner -->
+    <div class="banner" id="statusBanner">
+      <span id="bannerIcon">⏳</span>
+      <span id="bannerText">Connecting to TraceForge backend…</span>
+    </div>
+
+    <!-- Recording Toggle -->
+    <section class="recording-section">
+      <div class="recording-info">
+        <div class="recording-label">Recording</div>
+        <div class="recording-sublabel" id="recordingSubLabel">All tabs</div>
+      </div>
+
+      <label class="toggle" id="recordingToggle" title="Toggle recording">
+        <input type="checkbox" id="recordingCheckbox" checked />
+        <span class="slider"></span>
+      </label>
+    </section>
+
+    <!-- Stats Row -->
+    <div class="stats-row">
+      <div class="stat-card" id="statTotal">
+        <div class="stat-value" id="statTotalVal">—</div>
+        <div class="stat-label">Captured</div>
+      </div>
+      <div class="stat-card error" id="statErrors">
+        <div class="stat-value" id="statErrorsVal">—</div>
+        <div class="stat-label">Errors</div>
+      </div>
+      <div class="stat-card slow" id="statSlow">
+        <div class="stat-value" id="statSlowVal">—</div>
+        <div class="stat-label">Slow</div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions">
+      <button class="btn btn-primary" id="openStudio">
+        <span>🚀</span> Open Studio
+      </button>
+      <button class="btn btn-ghost" id="clearBtn">
+        <span>🗑</span> Clear
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span>Local-first · Privacy-first · Open source</span>
+    </footer>
+
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

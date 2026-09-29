@@ -1,0 +1,343 @@
+/* TraceForge Popup — Premium Dark UI */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-base:       #0d0f14;
+  --bg-surface:    #151820;
+  --bg-elevated:   #1c2030;
+  --bg-hover:      #222840;
+
+  --accent:        #6366f1;
+  --accent-glow:   rgba(99, 102, 241, 0.35);
+  --accent-hover:  #818cf8;
+
+  --success:       #22d3a0;
+  --error:         #f87171;
+  --warning:       #fbbf24;
+
+  --text-primary:  #f0f2ff;
+  --text-secondary:#9196b0;
+  --text-muted:    #545878;
+
+  --border:        rgba(255,255,255,0.07);
+  --radius-sm:     6px;
+  --radius-md:     10px;
+  --radius-lg:     14px;
+
+  --font:          'Inter', -apple-system, sans-serif;
+  --shadow-glow:   0 0 24px rgba(99, 102, 241, 0.2);
+}
+
+html {
+  width: 340px;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  width: 340px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+  display: block;
+}
+
+.brand-name {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.3px;
+  background: linear-gradient(90deg, #f0f2ff, #a5b4fc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.brand-version {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: -2px;
+}
+
+.status-cluster {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+
+.status-dot.connected {
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(34, 211, 160, 0.6);
+  animation: pulse 2.5s ease-in-out infinite;
+}
+
+.status-dot.error {
+  background: var(--error);
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.5);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+/* ── Banner ──────────────────────────────────────────────────────────────── */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: all 0.3s;
+}
+
+.banner.connected {
+  border-color: rgba(34, 211, 160, 0.25);
+  color: var(--success);
+  background: rgba(34, 211, 160, 0.06);
+}
+
+.banner.error {
+  border-color: rgba(248, 113, 113, 0.25);
+  color: var(--error);
+  background: rgba(248, 113, 113, 0.06);
+}
+
+/* ── Recording Section ───────────────────────────────────────────────────── */
+
+.recording-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: border-color 0.3s;
+}
+
+.recording-section:hover {
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.recording-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.recording-sublabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Toggle Switch */
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.slider {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slider::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  top: 3px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toggle input:checked + .slider {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.toggle input:checked + .slider::before {
+  transform: translateX(18px);
+  background: #ffffff;
+}
+
+/* ── Stats Row ───────────────────────────────────────────────────────────── */
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.stat-card {
+  padding: 10px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: center;
+  transition: border-color 0.2s, transform 0.2s;
+  cursor: default;
+}
+
+.stat-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.stat-card.error .stat-value { color: var(--error); }
+.stat-card.slow  .stat-value { color: var(--warning); }
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.stat-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+/* ── Actions ─────────────────────────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.btn-primary {
+  flex: 1;
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  color: #ffffff;
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-ghost {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-elevated);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--error);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+.footer {
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding-top: 4px;
+  letter-spacing: 0.3px;
+}
+
+/* ── Recording Paused State ──────────────────────────────────────────────── */
+
+body.paused .recording-section {
+  border-color: rgba(248, 113, 113, 0.25);
+  background: rgba(248, 113, 113, 0.04);
+}
+
+body.paused .recording-label {
+  color: var(--error);
+}
