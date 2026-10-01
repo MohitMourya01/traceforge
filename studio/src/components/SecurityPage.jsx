@@ -1,7 +1,6 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
 import { CopyBtn } from './CopyBtn';
-import { methodClass, statusClass, fmtMs } from '../utils';
 
 const SEVERITIES = ['ALL', 'HIGH', 'MEDIUM', 'LOW'];
 const CATEGORIES = ['ALL', 'AUTH', 'INJECTION', 'CORS', 'LEAK', 'DOS', 'TRANSPORT', 'INFO'];
@@ -13,14 +12,13 @@ export function SecurityPage({ onSelectRequest }) {
   const [sevFilter, setSevFilter]   = useState('ALL');
   const [catFilter, setCatFilter]   = useState('ALL');
   const [search, setSearch]         = useState('');
-  const [selectedFinding, setSelectedFinding] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const [summaryData, findingsData] = await Promise.all([
         api.globalAuditStats(),
-        api.listFindings({ limit: 150 })
+        api.listFindings({ limit: 200 })
       ]);
       setStats(summaryData);
       setFindings(findingsData);
@@ -33,7 +31,7 @@ export function SecurityPage({ onSelectRequest }) {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 8000);
+    const interval = setInterval(fetchData, 6000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -59,32 +57,39 @@ export function SecurityPage({ onSelectRequest }) {
   const maxCatCount = Math.max(1, ...Object.values(categoryCounts));
 
   return (
-    <div className="security-page">
+    <div className="security-page animate-fade">
       {/* Header */}
       <div className="security-page-header">
         <div className="security-header-left">
           <div className="security-shield-badge">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              <path d="m9 12 2 2 4-4" />
+              <polyline points="9 12 11 14 15 10" />
             </svg>
           </div>
           <div>
-            <div className="security-header-title">Sentinel Cyber Security Posture</div>
+            <div className="security-header-title">Sentinel Cybersecurity Command Center</div>
             <div className="security-header-sub">
-              Continuous AST & Network heuristic auditing for OWASP Top 10, Injection, Auth & Token Leaks
+              Real-time heuristic engine for OWASP Top 10, Injection Attacks, Auth Weaknesses, CORS, and Secret Leaks
             </div>
           </div>
         </div>
 
         <div className="security-header-actions">
           <button className="btn btn-secondary" onClick={fetchData} disabled={loading}>
-            {loading ? <div className="spinner" /> : (
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-              </svg>
+            {loading ? (
+              <>
+                <div className="spinner" />
+                <span>Syncing...</span>
+              </>
+            ) : (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+                <span>Refresh Metrics</span>
+              </>
             )}
-            Refresh Metrics
           </button>
         </div>
       </div>
@@ -95,7 +100,7 @@ export function SecurityPage({ onSelectRequest }) {
         <div className={`kpi-card kpi-grade-card ${gradeClass}`}>
           <div className="kpi-card-header">
             <span className="kpi-card-title">Security Posture</span>
-            <span className="live-radar-dot" />
+            <span className="live-radar-dot" title="Live Continuous Monitoring" />
           </div>
           <div className="kpi-grade-display">
             <div className="kpi-grade-circle">
@@ -104,10 +109,10 @@ export function SecurityPage({ onSelectRequest }) {
             <div className="kpi-grade-details">
               <div className="kpi-grade-label">
                 {grade === 'A' ? 'Secure / Low Risk' :
-                 grade === 'B' ? 'Minor Vulnerabilities' :
-                 grade === 'C' ? 'Moderate Risk' :
+                 grade === 'B' ? 'Minor Deficiencies' :
+                 grade === 'C' ? 'Moderate Risk Detected' :
                  grade === 'D' ? 'High Risk Exposure' :
-                 'Critical Alert Level'}
+                 'Critical Exploit Level'}
               </div>
               <div className="kpi-score-badge">
                 Risk Score: <strong>{stats?.total_score ?? 0}</strong>
@@ -119,12 +124,12 @@ export function SecurityPage({ onSelectRequest }) {
         {/* Total Scanned */}
         <div className="kpi-card">
           <div className="kpi-card-header">
-            <span className="kpi-card-title">Requests Scanned</span>
+            <span className="kpi-card-title">Scanned Endpoints</span>
             <span className="kpi-card-icon">⚡</span>
           </div>
           <div className="kpi-card-num">{stats?.scanned_requests ?? 0}</div>
           <div className="kpi-card-sub">
-            {stats?.affected_requests ?? 0} endpoints flagged with findings
+            {stats?.affected_requests ?? 0} flagged with warnings
           </div>
         </div>
 
@@ -135,7 +140,7 @@ export function SecurityPage({ onSelectRequest }) {
             <span className="kpi-risk-pulse high-pulse" />
           </div>
           <div className="kpi-card-num text-danger">{stats?.high ?? 0}</div>
-          <div className="kpi-card-sub">Immediate exploit or leak hazards</div>
+          <div className="kpi-card-sub">Immediate exploit or token leaks</div>
         </div>
 
         {/* Medium Severity */}
@@ -164,13 +169,13 @@ export function SecurityPage({ onSelectRequest }) {
         {/* Category Attack Surface */}
         <div className="security-sidebar-card">
           <div className="sec-card-header">
-            <span className="sec-card-title">Vulnerability Categories</span>
+            <span className="sec-card-title">Attack Surface Categories</span>
             <span className="sec-card-badge">{Object.keys(categoryCounts).length} Types</span>
           </div>
 
           <div className="category-bars-list">
             {Object.keys(categoryCounts).length === 0 ? (
-              <div className="sec-empty-small">No category data yet</div>
+              <div className="sec-empty-small">No category alerts recorded yet</div>
             ) : (
               Object.entries(categoryCounts).map(([cat, count]) => {
                 const pct = Math.round((count / maxCatCount) * 100);
@@ -180,6 +185,7 @@ export function SecurityPage({ onSelectRequest }) {
                     key={cat}
                     className={`cat-bar-row ${isSelected ? 'selected' : ''}`}
                     onClick={() => setCatFilter(isSelected ? 'ALL' : cat)}
+                    title={`Click to filter findings by ${cat}`}
                   >
                     <div className="cat-bar-labels">
                       <span className="cat-bar-name">{cat}</span>
@@ -195,7 +201,7 @@ export function SecurityPage({ onSelectRequest }) {
           </div>
 
           <div className="sentinel-rule-pack-info">
-            <div className="rule-pack-title">Sentinel Rule Engine</div>
+            <div className="rule-pack-title">Sentinel Cyber Engine</div>
             <p className="rule-pack-text">
               Real-time pattern inspection for SQLi, XSS, Path Traversal, JWT Weaknesses, Secret Leaks, CORS wildcarding, and Missing Headers.
             </p>
@@ -248,10 +254,10 @@ export function SecurityPage({ onSelectRequest }) {
               <div className="sec-feed-empty">
                 <div className="sec-feed-empty-icon">🛡️</div>
                 <div className="sec-feed-empty-title">
-                  {findings.length === 0 ? 'No Cyber Security Findings' : 'No findings match current filters'}
+                  {findings.length === 0 ? 'No Cybersecurity Vulnerabilities Detected' : 'No findings match current filters'}
                 </div>
                 <div className="sec-feed-empty-sub">
-                  Sentinel monitors incoming and outgoing network traffic automatically.
+                  Sentinel continuously audits incoming and outgoing network traffic in the background.
                 </div>
               </div>
             ) : (
@@ -281,7 +287,7 @@ export function SecurityPage({ onSelectRequest }) {
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                             <circle cx="12" cy="12" r="3" />
                           </svg>
-                          Inspect Request #{f.captured_request_id}
+                          <span>Inspect #{f.captured_request_id}</span>
                         </button>
                       )}
                     </div>
@@ -292,9 +298,11 @@ export function SecurityPage({ onSelectRequest }) {
                       <div className="feed-item-evidence">
                         <div className="evidence-header">
                           <span>Payload Evidence</span>
-                          <CopyBtn text={f.evidence} />
+                          <CopyBtn text={f.evidence} label="Copy" className="btn-xs" />
                         </div>
-                        <pre className="evidence-code">{f.evidence}</pre>
+                        <pre className="evidence-code">
+                          <code>{f.evidence}</code>
+                        </pre>
                       </div>
                     )}
 
@@ -314,3 +322,4 @@ export function SecurityPage({ onSelectRequest }) {
     </div>
   );
 }
+

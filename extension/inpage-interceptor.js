@@ -2,8 +2,8 @@
  * TraceForge - In-Page Interceptor
  *
  * Injected DIRECTLY into the page's JavaScript context (not the extension
- * sandbox), so it can hook window.fetch and XMLHttpRequest before any
- * application code runs.
+ * sandbox), so it can hook window.fetch, XMLHttpRequest, and navigator.sendBeacon
+ * before any application code runs.
  *
  * Captured data is sent to content.js via window.postMessage using the
  * channel "__TRACEFORGE__".
@@ -14,6 +14,11 @@
 
 (function () {
   "use strict";
+
+  if (window.__TRACEFORGE_INTERCEPTOR_ACTIVE__) {
+    return;
+  }
+  window.__TRACEFORGE_INTERCEPTOR_ACTIVE__ = true;
 
   // ── State ────────────────────────────────────────────────────────────────────
   let isRecording = true;           // Controlled by popup toggle
@@ -28,6 +33,27 @@
 
   function generateId() {
     return "tf-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
+  }
+
+  function resolveFullUrl(rawUrl) {
+    if (!rawUrl) return "";
+    try {
+      return new URL(rawUrl, window.location.href).href;
+    } catch (_) {
+      return String(rawUrl);
+    }
+  }
+
+  function isTraceForgeInternalUrl(url) {
+    if (!url) return false;
+    return (
+      url.includes(":7890/api/ingest") ||
+      url.includes(":7890/api/stats") ||
+      url.includes(":7890/health") ||
+      url.includes(":7890/ws/") ||
+      url.includes(":7890/api/requests") ||
+      url.includes(":7890/api/mock-rules")
+    );
   }
 
   function getCurrentActionContext() {
@@ -51,7 +77,11 @@
 
   function postCapture(data) {
     if (!isRecording) return;
-    window.postMessage({ __TRACEFORGE__: true, type: "CAPTURED_REQUEST", data }, "*");
+    try {
+      window.postMessage({ __TRACEFORGE__: true, type: "CAPTURED_REQUEST", data }, "*");
+    } catch (err) {
+      console.warn("[TraceForge Interceptor] postMessage error:", err);
+    }
   }
 
   // ── Mock Rule Matching ────────────────────────────────────────────────────────
@@ -182,236 +212,365 @@
 
   // ── Fetch Interceptor ─────────────────────────────────────────────────────────
 
-  const _originalFetch = window.fetch.bind(window);
+  const _originalFetch = window.fetch ? window.fetch.bind(window) : null;
 
-  window.fetch = async function (input, init = {}) {
-    const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input);
-    const method = (init.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
-
-    // Skip non-http calls (chrome-extension://, data:, etc.)
-    if (!url.startsWith("http")) {
-      return _originalFetch(input, init);
-    }
-
-    const requestId = generateId();
-    const actionCtx = getCurrentActionContext();
-    const startTime = performance.now();
-
-    // Read request body safely across all payload types
-    let requestBody = null;
-    try {
-      if (init && init.body !== undefined && init.body !== null) {
-        requestBody = await extractBodyAsync(init.body);
-      } else if (input instanceof Request) {
-        try {
-          const clonedReq = input.clone();
-          requestBody = await clonedReq.text();
-        } catch (_) {}
+  if (_originalFetch) {
+    window.fetch = async function (input, init) {
+      let rawUrl = "";
+      if (typeof input === "string") {
+        rawUrl = input;
+      } else if (input instanceof URL) {
+        rawUrl = input.href;
+      } else if (typeof Request !== "undefined" && input instanceof Request) {
+        rawUrl = input.url;
+      } else {
+        rawUrl = String(input || "");
       }
-    } catch (_) {}
 
-    // Parse request headers
-    let requestHeaders = {};
-    try {
-      const headers = init.headers || (input instanceof Request ? input.headers : {});
-      if (headers instanceof Headers) {
-        headers.forEach((v, k) => { requestHeaders[k] = v; });
-      } else if (typeof headers === "object") {
-        requestHeaders = { ...headers };
+      const fullUrl = resolveFullUrl(rawUrl);
+      const method = (
+        (init && init.method) ||
+        (typeof Request !== "undefined" && input instanceof Request ? input.method : "GET")
+      ).toUpperCase();
+
+      // Skip non-http calls (chrome-extension://, data:, etc.) and internal TraceForge calls
+      if (
+        (!fullUrl.startsWith("http://") && !fullUrl.startsWith("https://")) ||
+        isTraceForgeInternalUrl(fullUrl)
+      ) {
+        return init !== undefined ? _originalFetch(input, init) : _originalFetch(input);
       }
-    } catch (_) {}
 
-    // Check for mock rule
-    const mockRule = findMatchingRule(method, url);
-    if (mockRule) {
-      const mockResponse = await applyMockRule(mockRule);
-      const mockBody = await mockResponse.clone().text();
+      const requestId = generateId();
+      const actionCtx = getCurrentActionContext();
+      const startTime = performance.now();
+
+      // Read request body safely across all payload types
+      let requestBody = null;
+      try {
+        if (init && init.body !== undefined && init.body !== null) {
+          requestBody = await extractBodyAsync(init.body);
+        } else if (typeof Request !== "undefined" && input instanceof Request) {
+          try {
+            const clonedReq = input.clone();
+            requestBody = await clonedReq.text();
+          } catch (_) {}
+        }
+      } catch (_) {}
+
+      // Parse request headers
+      let requestHeaders = {};
+      try {
+        const headers = (init && init.headers) || (typeof Request !== "undefined" && input instanceof Request ? input.headers : null);
+        if (headers) {
+          if (typeof Headers !== "undefined" && headers instanceof Headers) {
+            headers.forEach((v, k) => { requestHeaders[k] = v; });
+          } else if (Array.isArray(headers)) {
+            headers.forEach(([k, v]) => { requestHeaders[k] = v; });
+          } else if (typeof headers === "object") {
+            requestHeaders = { ...headers };
+          }
+        }
+      } catch (_) {}
+
+      // Check for mock rule
+      const mockRule = findMatchingRule(method, fullUrl) || findMatchingRule(method, rawUrl);
+      if (mockRule) {
+        const mockResponse = await applyMockRule(mockRule);
+        const mockBody = await mockResponse.clone().text();
+        const duration = performance.now() - startTime;
+
+        postCapture({
+          request_id: requestId,
+          method,
+          url: fullUrl,
+          request_headers: requestHeaders,
+          request_body: requestBody,
+          status_code: mockResponse.status,
+          status_text: mockResponse.statusText,
+          response_body: mockBody,
+          duration_ms: Math.round(duration),
+          resource_type: "fetch",
+          is_mocked: true,
+          ...actionCtx,
+        });
+
+        return mockResponse;
+      }
+
+      // Real fetch
+      let response;
+      try {
+        response = init !== undefined ? await _originalFetch(input, init) : await _originalFetch(input);
+      } catch (err) {
+        const duration = performance.now() - startTime;
+        postCapture({
+          request_id: requestId,
+          method,
+          url: fullUrl,
+          request_headers: requestHeaders,
+          request_body: requestBody,
+          status_code: null,
+          status_text: "Network Error",
+          response_body: err.message,
+          duration_ms: Math.round(duration),
+          resource_type: "fetch",
+          ...actionCtx,
+        });
+        throw err;
+      }
+
       const duration = performance.now() - startTime;
-
-      postCapture({
-        request_id: requestId,
-        method,
-        url,
-        request_headers: requestHeaders,
-        request_body: requestBody,
-        status_code: mockResponse.status,
-        status_text: mockResponse.statusText,
-        response_body: mockBody,
-        duration_ms: Math.round(duration),
-        resource_type: "fetch",
-        is_mocked: true,
-        ...actionCtx,
-      });
-
-      return mockResponse;
-    }
-
-    // Real fetch
-    let response;
-    try {
-      response = await _originalFetch(input, init);
-    } catch (err) {
-      const duration = performance.now() - startTime;
-      postCapture({
-        request_id: requestId,
-        method,
-        url,
-        request_headers: requestHeaders,
-        request_body: requestBody,
-        status_code: null,
-        status_text: "Network Error",
-        response_body: err.message,
-        duration_ms: Math.round(duration),
-        resource_type: "fetch",
-        ...actionCtx,
-      });
-      throw err;
-    }
-
-    const duration = performance.now() - startTime;
-    const cloned = response.clone();
-
-    // Read response body async (don't block original response)
-    cloned.text().then((responseBody) => {
       const responseHeaders = {};
-      cloned.headers.forEach((v, k) => { responseHeaders[k] = v; });
+      try {
+        if (response.headers) {
+          response.headers.forEach((v, k) => { responseHeaders[k] = v; });
+        }
+      } catch (_) {}
 
-      postCapture({
-        request_id: requestId,
-        method,
-        url,
-        request_headers: requestHeaders,
-        request_body: requestBody,
-        status_code: response.status,
-        status_text: response.statusText,
-        response_headers: responseHeaders,
-        response_body: responseBody,
-        duration_ms: Math.round(duration),
-        resource_type: "fetch",
-        ...actionCtx,
-      });
-    }).catch(() => {
-      // Silently ignore body-read errors (e.g. streamed responses)
-    });
+      // Read response body async without blocking the app
+      try {
+        const cloned = response.clone();
+        cloned.text().then((responseBody) => {
+          postCapture({
+            request_id: requestId,
+            method,
+            url: fullUrl,
+            request_headers: requestHeaders,
+            request_body: requestBody,
+            status_code: response.status,
+            status_text: response.statusText,
+            response_headers: responseHeaders,
+            response_body: responseBody,
+            duration_ms: Math.round(duration),
+            resource_type: "fetch",
+            ...actionCtx,
+          });
+        }).catch(() => {
+          // Body reading failed (e.g. opaque or binary stream) — still report the request
+          postCapture({
+            request_id: requestId,
+            method,
+            url: fullUrl,
+            request_headers: requestHeaders,
+            request_body: requestBody,
+            status_code: response.status,
+            status_text: response.statusText,
+            response_headers: responseHeaders,
+            response_body: "[Response Body Not Decodable]",
+            duration_ms: Math.round(duration),
+            resource_type: "fetch",
+            ...actionCtx,
+          });
+        });
+      } catch (_) {
+        // If clone() itself fails (e.g. body already used or locked)
+        postCapture({
+          request_id: requestId,
+          method,
+          url: fullUrl,
+          request_headers: requestHeaders,
+          request_body: requestBody,
+          status_code: response.status,
+          status_text: response.statusText,
+          response_headers: responseHeaders,
+          response_body: null,
+          duration_ms: Math.round(duration),
+          resource_type: "fetch",
+          ...actionCtx,
+        });
+      }
 
-    return response;
-  };
+      return response;
+    };
+  }
 
   // ── XMLHttpRequest Interceptor ─────────────────────────────────────────────────
 
   const _OriginalXHR = window.XMLHttpRequest;
 
-  window.XMLHttpRequest = function () {
-    const xhr = new _OriginalXHR();
-    const requestId = generateId();
-    let method = "GET";
-    let url = "";
-    let requestHeaders = {};
-    let requestBody = null;
-    let startTime = null;
-    const actionCtx = getCurrentActionContext();
+  if (_OriginalXHR) {
+    function TraceForgeXHR() {
+      const xhr = new _OriginalXHR();
+      const requestId = generateId();
+      let method = "GET";
+      let rawUrl = "";
+      let fullUrl = "";
+      let requestHeaders = {};
+      let requestBody = null;
+      let startTime = null;
+      const actionCtx = getCurrentActionContext();
 
-    const originalOpen = xhr.open.bind(xhr);
-    xhr.open = function (m, u, ...rest) {
-      method = m.toUpperCase();
-      url = u;
-      return originalOpen(m, u, ...rest);
-    };
+      const originalOpen = xhr.open.bind(xhr);
+      xhr.open = function (m, u, ...rest) {
+        method = (m || "GET").toUpperCase();
+        rawUrl = u;
+        fullUrl = resolveFullUrl(u);
+        return originalOpen(m, u, ...rest);
+      };
 
-    const originalSetRequestHeader = xhr.setRequestHeader.bind(xhr);
-    xhr.setRequestHeader = function (name, value) {
-      requestHeaders[name] = value;
-      return originalSetRequestHeader(name, value);
-    };
+      const originalSetRequestHeader = xhr.setRequestHeader.bind(xhr);
+      xhr.setRequestHeader = function (name, value) {
+        requestHeaders[name] = value;
+        return originalSetRequestHeader(name, value);
+      };
 
-    const originalSend = xhr.send.bind(xhr);
-    xhr.send = function (body) {
-      if (!url.startsWith("http")) {
-        return originalSend(body);
-      }
+      const originalSend = xhr.send.bind(xhr);
+      xhr.send = function (body) {
+        // Skip non-http calls and internal TraceForge calls
+        if (
+          (!fullUrl.startsWith("http://") && !fullUrl.startsWith("https://")) ||
+          isTraceForgeInternalUrl(fullUrl)
+        ) {
+          return originalSend(body);
+        }
 
-      // Extract request body synchronously where possible, or read Blob asynchronously
-      requestBody = extractBodySync(body);
-      if (typeof Blob !== "undefined" && body instanceof Blob) {
-        const reader = new FileReader();
-        reader.onload = () => { requestBody = reader.result; };
-        try { reader.readAsText(body); } catch (_) {}
-      }
+        // Extract request body synchronously where possible, or read Blob asynchronously
+        requestBody = extractBodySync(body);
+        if (typeof Blob !== "undefined" && body instanceof Blob) {
+          const reader = new FileReader();
+          reader.onload = () => { requestBody = reader.result; };
+          try { reader.readAsText(body); } catch (_) {}
+        }
 
-      // Check mock rule
-      const mockRule = findMatchingRule(method, url);
-      if (mockRule) {
-        setTimeout(async () => {
-          if (mockRule.simulated_delay_ms > 0) {
-            await new Promise((r) => setTimeout(r, mockRule.simulated_delay_ms));
+        // Check mock rule
+        const mockRule = findMatchingRule(method, fullUrl) || findMatchingRule(method, rawUrl);
+        if (mockRule) {
+          setTimeout(async () => {
+            if (mockRule.simulated_delay_ms > 0) {
+              await new Promise((r) => setTimeout(r, mockRule.simulated_delay_ms));
+            }
+
+            Object.defineProperty(xhr, "status", { get: () => mockRule.override_status_code });
+            Object.defineProperty(xhr, "statusText", { get: () => mockRule.override_status_text || "OK" });
+            Object.defineProperty(xhr, "responseText", { get: () => mockRule.override_body || "" });
+            Object.defineProperty(xhr, "response", { get: () => mockRule.override_body || "" });
+            Object.defineProperty(xhr, "readyState", { get: () => 4 });
+
+            postCapture({
+              request_id: requestId,
+              method,
+              url: fullUrl,
+              request_headers: requestHeaders,
+              request_body: requestBody,
+              status_code: mockRule.override_status_code,
+              status_text: mockRule.override_status_text || "OK",
+              response_body: mockRule.override_body || "",
+              duration_ms: mockRule.simulated_delay_ms,
+              resource_type: "xhr",
+              is_mocked: true,
+              ...actionCtx,
+            });
+
+            xhr.dispatchEvent(new Event("readystatechange"));
+            xhr.dispatchEvent(new Event("load"));
+          }, 0);
+
+          return;
+        }
+
+        startTime = performance.now();
+
+        xhr.addEventListener("loadend", () => {
+          const duration = performance.now() - (startTime || performance.now());
+          const responseHeaders = {};
+          try {
+            const rawHeaders = xhr.getAllResponseHeaders() || "";
+            rawHeaders.trim().split(/[\r\n]+/).forEach((line) => {
+              const [key, ...rest] = line.split(": ");
+              if (key) responseHeaders[key.toLowerCase()] = rest.join(": ");
+            });
+          } catch (_) {}
+
+          let responseBody = null;
+          try {
+            if (!xhr.responseType || xhr.responseType === "text") {
+              responseBody = xhr.responseText;
+            } else if (xhr.responseType === "json") {
+              responseBody = typeof xhr.response === "object" ? JSON.stringify(xhr.response, null, 2) : String(xhr.response);
+            } else if (xhr.response) {
+              responseBody = `[Binary: ${xhr.responseType}]`;
+            }
+          } catch (_) {
+            try { responseBody = String(xhr.response); } catch (_) {}
           }
-
-          Object.defineProperty(xhr, "status", { get: () => mockRule.override_status_code });
-          Object.defineProperty(xhr, "statusText", { get: () => mockRule.override_status_text || "OK" });
-          Object.defineProperty(xhr, "responseText", { get: () => mockRule.override_body || "" });
-          Object.defineProperty(xhr, "response", { get: () => mockRule.override_body || "" });
-          Object.defineProperty(xhr, "readyState", { get: () => 4 });
 
           postCapture({
             request_id: requestId,
             method,
-            url,
+            url: fullUrl,
             request_headers: requestHeaders,
             request_body: requestBody,
-            status_code: mockRule.override_status_code,
-            status_text: mockRule.override_status_text || "OK",
-            response_body: mockRule.override_body || "",
-            duration_ms: mockRule.simulated_delay_ms,
+            status_code: xhr.status || null,
+            status_text: xhr.statusText || null,
+            response_headers: responseHeaders,
+            response_body: responseBody,
+            duration_ms: Math.round(duration),
             resource_type: "xhr",
-            is_mocked: true,
             ...actionCtx,
           });
-
-          xhr.dispatchEvent(new Event("readystatechange"));
-          xhr.dispatchEvent(new Event("load"));
-        }, 0);
-
-        return;
-      }
-
-      startTime = performance.now();
-
-      xhr.addEventListener("loadend", () => {
-        const duration = performance.now() - startTime;
-        const responseHeaders = {};
-        const rawHeaders = xhr.getAllResponseHeaders() || "";
-        rawHeaders.trim().split(/[\r\n]+/).forEach((line) => {
-          const [key, ...rest] = line.split(": ");
-          if (key) responseHeaders[key.toLowerCase()] = rest.join(": ");
         });
 
+        return originalSend(body);
+      };
+
+      return xhr;
+    }
+
+    // Preserve all static properties (UNSENT, OPENED, HEADERS_RECEIVED, LOADING, DONE) and prototype
+    TraceForgeXHR.prototype = _OriginalXHR.prototype;
+    try {
+      const descriptors = Object.getOwnPropertyDescriptors(_OriginalXHR);
+      for (const key of Object.keys(descriptors)) {
+        if (key !== "prototype" && key !== "length" && key !== "name") {
+          try {
+            Object.defineProperty(TraceForgeXHR, key, descriptors[key]);
+          } catch (_) {
+            try { TraceForgeXHR[key] = _OriginalXHR[key]; } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+
+    TraceForgeXHR.UNSENT = 0;
+    TraceForgeXHR.OPENED = 1;
+    TraceForgeXHR.HEADERS_RECEIVED = 2;
+    TraceForgeXHR.LOADING = 3;
+    TraceForgeXHR.DONE = 4;
+
+    window.XMLHttpRequest = TraceForgeXHR;
+  }
+
+  // ── Beacon Interceptor ────────────────────────────────────────────────────────
+
+  if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+    const _originalSendBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = function (url, data) {
+      const fullUrl = resolveFullUrl(url);
+      if (
+        (fullUrl.startsWith("http://") || fullUrl.startsWith("https://")) &&
+        !isTraceForgeInternalUrl(fullUrl)
+      ) {
+        const requestId = generateId();
+        const actionCtx = getCurrentActionContext();
+        const bodyStr = extractBodySync(data);
         postCapture({
           request_id: requestId,
-          method,
-          url,
-          request_headers: requestHeaders,
-          request_body: requestBody,
-          status_code: xhr.status || null,
-          status_text: xhr.statusText || null,
-          response_headers: responseHeaders,
-          response_body: xhr.responseText || null,
-          duration_ms: Math.round(duration),
-          resource_type: "xhr",
+          method: "POST",
+          url: fullUrl,
+          request_headers: { "Content-Type": "text/plain;charset=UTF-8" },
+          request_body: bodyStr,
+          status_code: 200,
+          status_text: "Beacon Queued",
+          response_body: "[Beacon Dispatched]",
+          duration_ms: 0,
+          resource_type: "beacon",
           ...actionCtx,
         });
-      });
-
-      return originalSend(body);
+      }
+      return _originalSendBeacon(url, data);
     };
-
-    return xhr;
-  };
-
-  // Copy static properties from original XHR
-  Object.keys(_OriginalXHR).forEach((key) => {
-    try { window.XMLHttpRequest[key] = _OriginalXHR[key]; } catch (_) {}
-  });
-  window.XMLHttpRequest.prototype = _OriginalXHR.prototype;
+  }
 
   // ── DOM Action Listener ───────────────────────────────────────────────────────
   // Intercepts user clicks and form submits to label subsequent API calls
@@ -460,5 +619,17 @@
     }
   });
 
-  console.log("[TraceForge] Interceptor active 🔥");
+  window.__traceforge_test__ = async function () {
+    console.log("[TraceForge] 🧪 Sending test fetch request...");
+    try {
+      const res = await fetch("https://jsonplaceholder.typicode.com/todos/1");
+      const json = await res.json();
+      console.log("[TraceForge] 🧪 Test fetch response:", json);
+      return json;
+    } catch (err) {
+      console.error("[TraceForge] 🧪 Test fetch error:", err);
+    }
+  };
+
+  console.log("[TraceForge] Interceptor active 🔥 (Run window.__traceforge_test__() to send a test request)");
 })();

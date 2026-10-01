@@ -1,4 +1,4 @@
-﻿"""
+"""
 TraceForge - WebSocket Connection Manager
 """
 
@@ -15,6 +15,11 @@ class ConnectionManager:
     def __init__(self):
         self._extension_clients: list[WebSocket] = []
         self._studio_clients: list[WebSocket] = []
+        self._is_recording: bool = True
+
+    @property
+    def is_recording(self) -> bool:
+        return self._is_recording
 
     async def connect(self, websocket: WebSocket, client_type: ClientType):
         await websocket.accept()
@@ -38,7 +43,26 @@ class ConnectionManager:
             except Exception:
                 dead.append(client)
         for d in dead:
-            self._studio_clients.remove(d)
+            if d in self._studio_clients:
+                self._studio_clients.remove(d)
+
+    async def broadcast_to_extension(self, data: dict):
+        message = json.dumps(data)
+        dead = []
+        for client in self._extension_clients:
+            try:
+                await client.send_text(message)
+            except Exception:
+                dead.append(client)
+        for d in dead:
+            if d in self._extension_clients:
+                self._extension_clients.remove(d)
+
+    async def set_recording(self, recording: bool):
+        self._is_recording = recording
+        logger.info(f"Capture recording state set to: {recording}")
+        await self.broadcast_to_extension({"type": "SET_RECORDING", "recording": recording})
+        await self.broadcast_to_studio({"type": "RECORDING_STATE", "recording": recording})
 
     async def broadcast_sentinel_alert(self, finding: dict, request_info: dict):
         """Push a real-time Sentinel HIGH/MEDIUM finding alert to Studio clients."""
@@ -67,7 +91,8 @@ class ConnectionManager:
             except Exception:
                 dead.append(client)
         for d in dead:
-            self._extension_clients.remove(d)
+            if d in self._extension_clients:
+                self._extension_clients.remove(d)
 
     @property
     def extension_count(self) -> int:

@@ -6,9 +6,9 @@
  *     (ws://127.0.0.1:7890/ws/extension)
  *  2. Receives captured requests from content scripts and POSTs them to
  *     the backend via REST (/api/ingest)
- *  3. Receives MOCK_RULES_UPDATE from backend and broadcasts to all tabs
- *  4. Maintains per-tab recording state
- *  5. Handles popup communication (status queries, toggle recording)
+ *  3. Receives MOCK_RULES_UPDATE from backend and broadcasts to all active tabs
+ *  4. Programmatically injects interceptor into existing tabs on startup/reload
+ *  5. Maintains per-tab recording state and handles popup queries
  */
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -34,6 +34,49 @@ const tabRecording = {};
 // Global recording default
 let globalRecording = true;
 
+// ── Programmatic Injection for Open / Existing Tabs ──────────────────────────
+
+async function injectIntoAllTabs() {
+  try {
+    const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+    for (const tab of tabs) {
+      if (!tab.id || !tab.url) continue;
+      if (!tab.url.startsWith("http://") && !tab.url.startsWith("https://")) continue;
+
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          files: ["inpage-interceptor.js"],
+          world: "MAIN",
+        });
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          files: ["content.js"],
+          world: "ISOLATED",
+        });
+      } catch (_) {
+        // Tab might be unloaded, discarded or restricted (chrome webstore, etc.)
+      }
+    }
+  } catch (_) {}
+}
+
+// ── Safe Tab Message Broadcast ────────────────────────────────────────────────
+
+async function broadcastToHttpTabs(msg) {
+  try {
+    const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+    for (const tab of tabs) {
+      if (!tab.id) continue;
+      chrome.tabs.sendMessage(tab.id, msg, () => {
+        if (chrome.runtime.lastError) {
+          // Tab may not have content script yet or is navigating - safe to ignore
+        }
+      });
+    }
+  } catch (_) {}
+}
+
 // ── WebSocket Connection ──────────────────────────────────────────────────────
 
 function connectWebSocket() {
@@ -55,9 +98,15 @@ function connectWebSocket() {
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-
         if (msg.type === "MOCK_RULES_UPDATE") {
           handleMockRulesUpdate(msg.rules || []);
+        } else if (msg.type === "SET_RECORDING") {
+          globalRecording = Boolean(msg.recording);
+          broadcastToHttpTabs({
+            type: "SET_RECORDING",
+            recording: globalRecording,
+          });
+          broadcastStatus();
         }
       } catch (err) {
         console.warn("[TraceForge] WS message parse error:", err);
@@ -67,18 +116,15 @@ function connectWebSocket() {
     ws.onclose = () => {
       wsConnected = false;
       ws = null;
-      console.log(`[TraceForge] WS disconnected. Reconnecting in ${wsReconnectDelay}ms...`);
       broadcastStatus();
       setTimeout(connectWebSocket, wsReconnectDelay);
       wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, WS_RECONNECT_MAX_MS);
     };
 
-    ws.onerror = (err) => {
-      console.warn("[TraceForge] WS error:", err);
+    ws.onerror = () => {
       backendAlive = false;
     };
   } catch (err) {
-    console.warn("[TraceForge] Failed to create WebSocket:", err);
     setTimeout(connectWebSocket, wsReconnectDelay);
   }
 }
@@ -86,7 +132,6 @@ function connectWebSocket() {
 // ── Ingest Captured Request ────────────────────────────────────────────────────
 
 async function ingestRequest(data, tabId) {
-  // Attach tab info
   const payload = {
     ...data,
     tab_id: tabId,
@@ -100,34 +145,30 @@ async function ingestRequest(data, tabId) {
     });
 
     if (!resp.ok) {
-      console.warn("[TraceForge] Ingest failed:", resp.status);
+      const errText = await resp.text();
+      console.warn(`[TraceForge] ❌ Ingest failed (HTTP ${resp.status}):`, errText);
     } else {
       backendAlive = true;
+      console.log(`[TraceForge] 🟢 Ingested: ${data.method} ${data.url}`);
     }
   } catch (err) {
     backendAlive = false;
-    console.warn("[TraceForge] Backend unreachable:", err.message);
   }
 }
 
 // ── Mock Rules Broadcast ──────────────────────────────────────────────────────
 
 async function handleMockRulesUpdate(rules) {
-  // Store rules in chrome.storage for content scripts that connect late
-  await chrome.storage.session.set({ mockRules: rules });
-
-  // Broadcast to all active tabs
-  const tabs = await chrome.tabs.query({});
-  for (const tab of tabs) {
-    if (tab.id) {
-      chrome.tabs.sendMessage(tab.id, {
-        type: "MOCK_RULES_UPDATE",
-        rules,
-      }).catch(() => {
-        // Tab may not have content script — ignore
-      });
+  try {
+    if (chrome.storage && chrome.storage.session) {
+      await chrome.storage.session.set({ mockRules: rules });
     }
-  }
+  } catch (_) {}
+
+  broadcastToHttpTabs({
+    type: "MOCK_RULES_UPDATE",
+    rules,
+  });
 }
 
 // ── Health Check ──────────────────────────────────────────────────────────────
@@ -151,8 +192,12 @@ function broadcastStatus() {
     backendAlive,
     globalRecording,
   };
-  // Send to popup if open (will fail silently if popup is closed)
-  chrome.runtime.sendMessage(status).catch(() => {});
+  // Send to popup if open (callback suppresses unhandled lastError)
+  chrome.runtime.sendMessage(status, () => {
+    if (chrome.runtime.lastError) {
+      // Popup is not open — normal
+    }
+  });
 }
 
 // ── Message Handler ────────────────────────────────────────────────────────────
@@ -169,6 +214,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (isTabRecording) {
       ingestRequest(message.data, tabId);
     }
+    if (sendResponse) sendResponse({ ok: true });
     return false;
   }
 
@@ -185,16 +231,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // ── Popup toggles recording
   if (message.type === "SET_RECORDING") {
     globalRecording = message.recording;
-    // Broadcast to all content scripts
-    chrome.tabs.query({}).then((tabs) => {
-      for (const tab of tabs) {
-        if (tab.id) {
-          chrome.tabs.sendMessage(tab.id, {
-            type: "SET_RECORDING",
-            recording: globalRecording,
-          }).catch(() => {});
-        }
-      }
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify({ type: "SET_RECORDING", recording: globalRecording }));
+      } catch (_) {}
+    }
+    broadcastToHttpTabs({
+      type: "SET_RECORDING",
+      recording: globalRecording,
     });
     broadcastStatus();
     sendResponse({ ok: true });
@@ -208,7 +252,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.sendMessage(tabId, {
       type: "SET_RECORDING",
       recording,
-    }).catch(() => {});
+    }, () => {
+      if (chrome.runtime.lastError) {}
+    });
     sendResponse({ ok: true });
     return false;
   }
@@ -222,13 +268,43 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   delete tabRecording[tabId];
 });
 
-// ── Initialization ─────────────────────────────────────────────────────────────
+// On tab navigation / completed loading, verify script injection
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (
+    changeInfo.status === "complete" &&
+    tab.url &&
+    (tab.url.startsWith("http://") || tab.url.startsWith("https://"))
+  ) {
+    chrome.tabs.sendMessage(tabId, { type: "PING_TAB" }, (resp) => {
+      if (chrome.runtime.lastError || !resp) {
+        chrome.scripting.executeScript({
+          target: { tabId, allFrames: true },
+          files: ["inpage-interceptor.js"],
+          world: "MAIN",
+        }).catch(() => {});
+        chrome.scripting.executeScript({
+          target: { tabId, allFrames: true },
+          files: ["content.js"],
+          world: "ISOLATED",
+        }).catch(() => {});
+      }
+    });
+  }
+});
 
-// Connect WebSocket on service worker startup
+// ── Lifecycle & Initialization ────────────────────────────────────────────────
+
+chrome.runtime.onInstalled.addListener(() => {
+  injectIntoAllTabs();
+  connectWebSocket();
+});
+
+// Connect WebSocket and inject into open tabs on service worker startup
 connectWebSocket();
+injectIntoAllTabs();
 
 // Periodic health check every 15 seconds
 setInterval(checkBackendHealth, 15000);
 checkBackendHealth();
 
-console.log("[TraceForge] Background service worker started 🔥");
+console.log("[TraceForge] Background service worker active 🔥");

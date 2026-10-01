@@ -1,4 +1,4 @@
-﻿const BASE = 'http://127.0.0.1:7890/api';
+const BASE = 'http://127.0.0.1:7890/api';
 
 async function req(path, opts = {}) {
   const res = await fetch(`${BASE}${path}`, {
@@ -43,4 +43,9 @@ export const api = {
 
   // Stats
   stats: () => req('/stats'),
+
+  // Recording
+  getRecording: () => req('/recording'),
+  setRecording: (recording) => req('/recording', { method: 'POST', body: JSON.stringify({ recording }) }),
 };
+

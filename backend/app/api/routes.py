@@ -643,4 +643,22 @@ def get_stats(session: Session = Depends(get_session)):
         "studio_clients":    manager.studio_count,
         "extension_clients": manager.extension_count,
         "tabs":              tabs,
+        "is_recording":      manager.is_recording,
     }
+
+
+# ── Recording Control ─────────────────────────────────────────────────────────
+
+@router.get("/recording")
+def get_recording_state():
+    """Return current global traffic capture recording state."""
+    return {"recording": manager.is_recording}
+
+
+@router.post("/recording")
+async def set_recording_state(payload: dict):
+    """Set global traffic capture recording state and broadcast to extension and studio."""
+    recording = bool(payload.get("recording", True))
+    await manager.set_recording(recording)
+    return {"recording": manager.is_recording}
+

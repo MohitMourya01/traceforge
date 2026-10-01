@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <!-- Main gradient: Hot pink to deep crimson -->
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff2d55"/>
+      <stop offset="50%" stop-color="#e91e63"/>
+      <stop offset="100%" stop-color="#cc1144"/>
+    </linearGradient>
+    <!-- Inner glow gradient -->
+    <linearGradient id="innerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6b8b"/>
+      <stop offset="100%" stop-color="#ff2d55"/>
+    </linearGradient>
+    <!-- Orange arc gradient -->
+    <linearGradient id="arcGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff6b35"/>
+      <stop offset="100%" stop-color="#ff8c42"/>
+    </linearGradient>
+    <!-- Outer glow filter -->
+    <filter id="glow">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Soft background glow -->
+  <circle cx="90" cy="90" r="70" fill="#ff2d55" opacity="0.08" filter="url(#softGlow)"/>
+
+  <!-- Shield shape (hexagonal rounded shield) -->
+  <path d="M100 18 L155 45 C162 48 168 58 168 66 L168 110 C168 135 140 158 100 178 C60 158 32 135 32 110 L32 66 C32 58 38 48 45 45 Z"
+    fill="url(#shieldGrad)" filter="url(#glow)" opacity="0.95"/>
+
+  <!-- Shield inner highlight -->
+  <path d="M100 30 L148 53 C153 55 157 63 157 69 L157 108 C157 129 133 149 100 166 C67 149 43 129 43 108 L43 69 C43 63 47 55 52 53 Z"
+    fill="none" stroke="url(#innerGrad)" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Location pin icon (inside shield) -->
+  <g transform="translate(100, 88)" filter="url(#glow)">
+    <!-- Pin outer circle -->
+    <path d="M0-32 C18-32 30-20 30-4 C30 14 0 40 0 40 C0 40-30 14-30-4 C-30-20-18-32 0-32Z"
+      fill="none" stroke="#ffffff" stroke-width="4" opacity="0.95"/>
+    <!-- Pin inner dot -->
+    <circle cx="0" cy="-4" r="10" fill="none" stroke="#ffffff" stroke-width="3.5" opacity="0.9"/>
+    <circle cx="0" cy="-4" r="3" fill="#ffffff" opacity="0.95"/>
+  </g>
+
+  <!-- Orange swoosh arc (bottom of shield) -->
+  <path d="M40 130 Q70 110 110 125 Q140 135 170 115"
+    fill="none" stroke="url(#arcGrad)" stroke-width="4" stroke-linecap="round" opacity="0.9" filter="url(#glow)"/>
+
+  <!-- Small dot at end of arc -->
+  <circle cx="170" cy="115" r="3" fill="#ff8c42" opacity="0.8"/>
+</svg>

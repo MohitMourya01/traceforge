@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { CopyBtn } from './CopyBtn';
 
@@ -52,9 +52,8 @@ export function AuditTab({ requestId }) {
       <div className="audit-loading-state">
         <div className="cyber-scanner-loader">
           <div className="scanner-line" />
-          <div className="scanner-glow" />
         </div>
-        <span>Analyzing security posture with Sentinel Engine...</span>
+        <span>Analyzing security posture with Sentinel AST Engine...</span>
       </div>
     );
   }
@@ -62,7 +61,7 @@ export function AuditTab({ requestId }) {
   if (!audit) {
     return (
       <div className="detail-section">
-        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Failed to load security audit.</p>
+        <div className="empty-panel-text">Failed to load security audit details.</div>
       </div>
     );
   }
@@ -86,7 +85,7 @@ export function AuditTab({ requestId }) {
   const gradeClass = `grade-${grade.toLowerCase()}`;
 
   return (
-    <div className="audit-tab-content">
+    <div className="audit-tab-content animate-fade">
       {/* Grade & Score Summary Banner */}
       <div className={`audit-summary-banner ${gradeClass}`}>
         <div className="audit-grade-box">
@@ -94,32 +93,32 @@ export function AuditTab({ requestId }) {
             <span className="grade-letter">{grade}</span>
           </div>
           <div className="grade-meta">
-            <div className="grade-title">Security Grade {grade}</div>
+            <div className="grade-title">Security Posture Grade {grade}</div>
             <div className="grade-sub">
-              {grade === 'A' ? 'Minimal Risk Exposure' :
-               grade === 'B' ? 'Minor Security Deficiencies' :
-               grade === 'C' ? 'Moderate Risk Detected' :
-               grade === 'D' ? 'Significant Vulnerabilities' :
-               'Critical Risk / Exploit Vector'}
+              {grade === 'A' ? 'Minimal Risk Exposure — Clean Request' :
+               grade === 'B' ? 'Minor Security Deficiencies Detected' :
+               grade === 'C' ? 'Moderate Risk & Policy Deviations' :
+               grade === 'D' ? 'Significant Vulnerabilities Present' :
+               'Critical Risk / Immediate Exploit Hazard'}
             </div>
           </div>
         </div>
 
         <div className="audit-stats-row">
           <div className="audit-stat-item">
-            <span className="stat-count text-danger">{audit.high}</span>
+            <span className="stat-count text-danger">{audit.high || 0}</span>
             <span className="stat-name">High</span>
           </div>
           <div className="audit-stat-item">
-            <span className="stat-count text-warning">{audit.medium}</span>
+            <span className="stat-count text-warning">{audit.medium || 0}</span>
             <span className="stat-name">Medium</span>
           </div>
           <div className="audit-stat-item">
-            <span className="stat-count text-primary">{audit.low}</span>
+            <span className="stat-count text-primary">{audit.low || 0}</span>
             <span className="stat-name">Low</span>
           </div>
           <div className="audit-stat-item">
-            <span className="stat-count">{audit.total}</span>
+            <span className="stat-count">{audit.total || findings.length}</span>
             <span className="stat-name">Total Findings</span>
           </div>
         </div>
@@ -132,14 +131,15 @@ export function AuditTab({ requestId }) {
         >
           {rerunning ? (
             <>
-              <div className="spinner" /> Scanning...
+              <div className="spinner" />
+              <span>Scanning...</span>
             </>
           ) : (
             <>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
               </svg>
-              Re-scan
+              <span>Re-scan</span>
             </>
           )}
         </button>
@@ -154,10 +154,13 @@ export function AuditTab({ requestId }) {
           </svg>
           <input
             className="input input-sm audit-search-input"
-            placeholder="Search findings, rule ID, or payload evidence..."
+            placeholder="Search findings by rule, keyword, or evidence payload..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+          {search && (
+            <button className="search-clear-btn" onClick={() => setSearch('')}>✕</button>
+          )}
         </div>
 
         <div className="audit-filters-group">
@@ -194,23 +197,23 @@ export function AuditTab({ requestId }) {
         {filtered.length === 0 ? (
           <div className="audit-clean-state">
             <div className="clean-shield-icon">
-              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                <path d="m9 12 2 2 4-4" />
+                <polyline points="9 12 11 14 15 10" />
               </svg>
             </div>
             <div className="clean-state-title">
-              {findings.length === 0 ? 'No Security Vulnerabilities Detected' : 'No findings match current filter criteria'}
+              {findings.length === 0 ? 'Zero Security Vulnerabilities Detected' : 'No findings match active filter criteria'}
             </div>
             <div className="clean-state-desc">
               {findings.length === 0
-                ? 'This endpoint complies with standard API security policies, authentication checks, and payload safety rules.'
-                : 'Try adjusting or clearing your search / category filters.'}
+                ? 'This HTTP transaction complies with Sentinel AST security heuristics, authentication guards, and payload safety policies.'
+                : 'Try adjusting or clearing your search / category filter selection above.'}
             </div>
           </div>
         ) : (
           filtered.map(finding => {
-            const isExp = !!expanded[finding.id];
+            const isExp = expanded[finding.id] !== false; // default expanded
             const isHigh = finding.severity === 'HIGH';
             const isMed  = finding.severity === 'MEDIUM';
 
@@ -233,27 +236,33 @@ export function AuditTab({ requestId }) {
                   </div>
                 </div>
 
-                <div className="finding-desc">{finding.description}</div>
+                {isExp && (
+                  <div className="finding-body-content animate-fade">
+                    <div className="finding-desc">{finding.description}</div>
 
-                {finding.evidence && (
-                  <div className="finding-evidence-block">
-                    <div className="evidence-header">
-                      <span>Detected Evidence</span>
-                      <CopyBtn text={finding.evidence} />
-                    </div>
-                    <pre className="evidence-code">{finding.evidence}</pre>
-                  </div>
-                )}
+                    {finding.evidence && (
+                      <div className="finding-evidence-block">
+                        <div className="evidence-header">
+                          <span>Detected Payload Evidence</span>
+                          <CopyBtn text={finding.evidence} label="Copy Evidence" className="btn-xs" />
+                        </div>
+                        <pre className="evidence-code">
+                          <code>{finding.evidence}</code>
+                        </pre>
+                      </div>
+                    )}
 
-                {finding.remediation && (
-                  <div className="finding-remediation-box">
-                    <div className="remediation-title">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                      </svg>
-                      Remediation Guidance
-                    </div>
-                    <div className="remediation-body">{finding.remediation}</div>
+                    {finding.remediation && (
+                      <div className="finding-remediation-box">
+                        <div className="remediation-title">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                          </svg>
+                          <span>Remediation Guidance</span>
+                        </div>
+                        <div className="remediation-body">{finding.remediation}</div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -264,3 +273,4 @@ export function AuditTab({ requestId }) {
     </div>
   );
 }
+

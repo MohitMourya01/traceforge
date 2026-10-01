@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import { methodClass } from '../utils';
 
 export function AlertToastContainer({ alerts, onDismiss, onInspect }) {
   if (!alerts || alerts.length === 0) return null;
@@ -23,8 +23,6 @@ function AlertToastItem({ alert, onDismiss, onInspect }) {
 
   return (
     <div className={`alert-toast ${isHigh ? 'toast-high' : isMed ? 'toast-med' : 'toast-low'}`}>
-      <div className="toast-glow" />
-      
       <div className="toast-header">
         <div className="toast-title-row">
           <span className={`toast-badge ${isHigh ? 'badge-high' : isMed ? 'badge-med' : 'badge-low'}`}>
@@ -34,7 +32,7 @@ function AlertToastItem({ alert, onDismiss, onInspect }) {
           <span className="toast-category">{alert.category}</span>
           <span className="toast-rule-id">[{alert.rule_id}]</span>
         </div>
-        <button className="toast-close-btn" onClick={onDismiss} title="Dismiss notification">
+        <button className="toast-close-btn" onClick={onDismiss} title="Dismiss alert">
           ✕
         </button>
       </div>
@@ -42,8 +40,12 @@ function AlertToastItem({ alert, onDismiss, onInspect }) {
       <div className="toast-body">
         <div className="toast-main-title">{alert.title}</div>
         <div className="toast-url-row">
-          <span className="toast-method">{alert.request?.method || 'REQ'}</span>
-          <span className="toast-url" title={alert.request?.url}>{alert.request?.url || 'API Request'}</span>
+          <span className={`badge badge-method ${methodClass(alert.request?.method)}`}>
+            {alert.request?.method || 'REQ'}
+          </span>
+          <span className="toast-url font-mono" title={alert.request?.url}>
+            {alert.request?.url || 'API Endpoint'}
+          </span>
         </div>
       </div>
 
@@ -53,10 +55,13 @@ function AlertToastItem({ alert, onDismiss, onInspect }) {
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
             <circle cx="12" cy="12" r="3" />
           </svg>
-          Inspect Request
+          <span>Inspect Security Findings</span>
         </button>
-        <span className="toast-time">Just now</span>
+        <span className="toast-time">Live Alert</span>
       </div>
+
+      <div className="toast-progress-bar" />
     </div>
   );
 }
+

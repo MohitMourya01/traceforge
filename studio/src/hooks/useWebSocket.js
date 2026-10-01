@@ -1,6 +1,7 @@
 /**
  * useWebSocket — subscribes to the backend WebSocket and
  * calls onMessage whenever a JSON message arrives.
+ * Returns { wsRef, sendMessage } for bi-directional communication.
  */
 import { useEffect, useRef, useCallback } from 'react';
 
@@ -30,6 +31,16 @@ export function useWebSocket(onMessage) {
     } catch { /* ignore */ }
   }, [onMessage]);
 
+  const sendMessage = useCallback((msg) => {
+    try {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
     connect();
@@ -40,5 +51,5 @@ export function useWebSocket(onMessage) {
     };
   }, [connect]);
 
-  return wsRef;
+  return { wsRef, sendMessage };
 }
